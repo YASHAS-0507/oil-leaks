@@ -458,7 +458,7 @@
     A = window.OilApp;
     T = window.THREE;
     const el = $('globe');
-    const topo = await (await fetch('vendor/countries-50m.json')).json();
+    const topo = await (await fetch('vendor/countries-50m.json?v=3')).json();
     land = topojson.feature(topo, topo.objects.countries).features;
 
     globe = Globe()(el)
