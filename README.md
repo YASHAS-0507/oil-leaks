@@ -20,7 +20,7 @@ Started as a DBMS course project. Code is MIT licensed, data is CC BY 4.0, contr
 
 ## Ship Tracker (3D globe)
 
-The **Ship Tracker** tab shows 50 *fictional* ships sailing along real sea lanes on a 3D globe: **green** = running, **yellow** = stalled (traffic, awaiting orders, weather), **red** = leaking. It is a simulation, not live AIS data. The `vessel` table is the source of truth: the simulation reads it, moves the ships and writes positions and status changes back with SQL `UPDATE`s, and a trigger logs every change to `vessel_event`. Run `UPDATE vessel SET status = 'leaking' WHERE vessel_id = 5;` in the SQL Lab, switch back to the globe, and the ship turns red.
+The **Ship Tracker** tab shows 77 *fictional* ships sailing along real sea lanes on a 3D globe: **green** = running, **yellow** = stalled (traffic, awaiting orders, weather), **red** = leaking. It is a simulation, not live AIS data. The `vessel` table is the source of truth: the simulation reads it, moves the ships and writes positions and status changes back with SQL `UPDATE`s, and a trigger logs every change to `vessel_event`. Run `UPDATE vessel SET status = 'leaking' WHERE vessel_id = 5;` in the SQL Lab, switch back to the globe, and the ship turns red.
 
 ## Entity-relationship diagram
 
