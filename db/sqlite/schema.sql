@@ -147,3 +147,68 @@ SELECT ca.name AS cause, COUNT(i.incident_id) AS incidents,
 FROM cause ca
 LEFT JOIN incident i ON i.cause_id = ca.cause_id
 GROUP BY ca.cause_id;
+
+-- Fleet simulation (powers the globe) -------------------------------------
+-- All vessels are fictional. Positions are cached from the simulation.
+
+CREATE TABLE shipping_route (
+  route_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name     TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE route_waypoint (
+  route_id  INTEGER NOT NULL REFERENCES shipping_route(route_id) ON DELETE CASCADE,
+  seq       INTEGER NOT NULL CHECK (seq > 0),
+  latitude  REAL NOT NULL CHECK (latitude  BETWEEN -90  AND 90),
+  longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+  PRIMARY KEY (route_id, seq)
+);
+
+CREATE TABLE vessel (
+  vessel_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  name           TEXT NOT NULL UNIQUE,
+  vessel_type    TEXT NOT NULL CHECK (vessel_type IN ('crude_tanker','product_tanker','container_ship','bulk_carrier')),
+  route_id       INTEGER NOT NULL REFERENCES shipping_route(route_id),
+  direction      INTEGER NOT NULL DEFAULT 1 CHECK (direction IN (-1, 1)),
+  speed_knots    REAL NOT NULL CHECK (speed_knots > 0),
+  progress       REAL NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 1),
+  latitude       REAL CHECK (latitude  BETWEEN -90  AND 90),
+  longitude      REAL CHECK (longitude BETWEEN -180 AND 180),
+  status         TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','stalled','leaking')),
+  status_reason  TEXT,
+  leaked_barrels INTEGER NOT NULL DEFAULT 0 CHECK (leaked_barrels >= 0)
+);
+
+CREATE TABLE vessel_event (
+  event_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  vessel_id  INTEGER NOT NULL REFERENCES vessel(vessel_id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('running','stalled','leaking')),
+  latitude   REAL,
+  longitude  REAL,
+  note       TEXT,
+  event_time TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_vessel_route  ON vessel(route_id);
+CREATE INDEX idx_vessel_status ON vessel(status);
+CREATE INDEX idx_vessel_event_vessel ON vessel_event(vessel_id);
+
+-- Every status change is logged automatically
+CREATE TRIGGER trg_vessel_status_log
+AFTER UPDATE OF status ON vessel
+WHEN OLD.status <> NEW.status
+BEGIN
+  INSERT INTO vessel_event (vessel_id, event_type, latitude, longitude, note)
+  VALUES (NEW.vessel_id, NEW.status, NEW.latitude, NEW.longitude, NEW.status_reason);
+END;
+
+CREATE VIEW v_fleet_status AS
+SELECT status, COUNT(*) AS vessels, COALESCE(SUM(leaked_barrels), 0) AS leaked_barrels
+FROM vessel
+GROUP BY status;
+
+CREATE VIEW v_vessel_details AS
+SELECT v.vessel_id, v.name, v.vessel_type, r.name AS route, v.speed_knots, v.status, v.status_reason,
+       v.latitude, v.longitude, v.leaked_barrels
+FROM vessel v
+JOIN shipping_route r ON r.route_id = v.route_id;

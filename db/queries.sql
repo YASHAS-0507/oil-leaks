@@ -90,3 +90,33 @@ SELECT name, incident_date, country, environment, volume_barrels
 FROM v_incident_details
 WHERE source_type = 'pipeline' AND environment IN ('land','freshwater')
 ORDER BY volume_barrels DESC;
+
+-- Q15: Fleet status overview (the green / yellow / red ships on the globe)
+SELECT * FROM v_fleet_status;
+
+-- Q16: Which ships are stalled and why
+SELECT name, vessel_type, route, status_reason
+FROM v_vessel_details
+WHERE status = 'stalled'
+ORDER BY route;
+
+-- Q17: Leaking ships with the volume lost so far
+SELECT name, vessel_type, route, status_reason, leaked_barrels
+FROM v_vessel_details
+WHERE status = 'leaking'
+ORDER BY leaked_barrels DESC;
+
+-- Q18: Fleet size and average speed per shipping route
+SELECT r.name AS route, COUNT(*) AS vessels, ROUND(AVG(v.speed_knots), 1) AS avg_speed_knots,
+       SUM(CASE WHEN v.status = 'leaking' THEN 1 ELSE 0 END) AS leaking
+FROM vessel v
+JOIN shipping_route r ON r.route_id = v.route_id
+GROUP BY r.route_id, r.name
+ORDER BY vessels DESC;
+
+-- Q19: Latest status-change events (written automatically by a trigger)
+SELECT e.event_id, v.name, e.event_type, e.note, e.event_time
+FROM vessel_event e
+JOIN vessel v ON v.vessel_id = e.vessel_id
+ORDER BY e.event_id DESC
+LIMIT 10;

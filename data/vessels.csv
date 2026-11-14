@@ -1,0 +1,51 @@
+vessel_id,name,vessel_type,route_id,direction,speed_knots,progress,latitude,longitude,status,status_reason,leaked_barrels
+1,Emerald Falcon,bulk_carrier,1,-1,11.7,0.7607,35.3172,15.7307,running,,0
+2,Golden Wave,container_ship,1,1,17.8,0.6051,19.686,38.5269,running,,0
+3,Copper Falcon,container_ship,1,-1,16.8,0.7896,37.7245,10.7381,running,,0
+4,Misty Drift,bulk_carrier,1,1,13.2,0.2714,6.1825,93.8571,running,,0
+5,Emerald Wave,container_ship,1,-1,17.8,0.1225,12.8632,112.8335,running,,0
+6,Jade Wave,crude_tanker,1,1,14.5,0.8464,36.2606,-1.7508,running,,0
+7,Noble Beacon,container_ship,1,1,17.6,0.3793,8.4528,75.4178,running,,0
+8,Lunar Spirit,crude_tanker,1,-1,13.5,0.5789,15.7913,41.2575,leaking,Cargo valve failure,596
+9,Polar Falcon,container_ship,1,-1,19.7,0.7301,35.0469,22.3675,running,,0
+10,Harbor Meridian,crude_tanker,2,1,14.9,0.5695,1.2379,104.329,running,,0
+11,Copper Spirit,crude_tanker,2,-1,13.4,0.5214,3.7293,99.8708,running,,0
+12,Coral Spirit,crude_tanker,2,-1,14.0,0.4835,5.8045,96.5718,running,,0
+13,Emerald Star,crude_tanker,2,-1,14.0,0.6974,12.7136,112.5886,running,,0
+14,Velvet Anchor,crude_tanker,2,-1,14.4,0.323,6.142,79.0935,running,,0
+15,Iron Wave,crude_tanker,2,-1,12.0,0.4098,5.4969,88.4752,running,,0
+16,Polar Current,crude_tanker,2,-1,13.1,0.1779,16.6491,67.4397,running,,0
+17,Jade Falcon,crude_tanker,2,-1,13.5,0.2239,12.4373,70.363,running,,0
+18,Golden Current,container_ship,3,-1,17.8,0.461,45.2449,-173.0415,running,,0
+19,Swift Falcon,container_ship,3,1,18.6,0.928,34.1197,-125.2913,running,,0
+20,Misty Spirit,container_ship,3,1,19.0,0.871,36.0648,-130.4295,stalled,Port congestion,0
+21,Noble Crest,container_ship,3,1,16.0,0.4184,45.1164,-177.9496,running,,0
+22,Pacific Mariner,product_tanker,3,1,13.4,0.5742,44.1812,-160.1904,running,,0
+23,Copper Venture,container_ship,3,1,16.0,0.0811,36.4277,147.5101,stalled,Bad weather,0
+24,Lunar Meridian,container_ship,4,-1,16.3,0.5421,44.4149,-39.6974,running,,0
+25,Crimson Wave,container_ship,4,-1,17.6,0.6551,42.8172,-48.2005,running,,0
+26,Iron Drift,container_ship,4,1,19.8,0.1767,49.342,-10.4414,running,,0
+27,Pacific Voyager,product_tanker,4,-1,14.9,0.3982,46.7098,-28.7021,leaking,Corroded fuel line,3429
+28,Silver Crest,product_tanker,4,-1,14.0,0.8998,40.9441,-66.1202,running,,0
+29,Cobalt Spirit,crude_tanker,4,-1,14.8,0.3194,47.9858,-22.4343,running,,0
+30,Cobalt Current,bulk_carrier,5,1,13.0,0.4389,-35.9926,23.9096,running,,0
+31,Bright Voyager,crude_tanker,5,1,13.9,0.1039,0.8569,86.2342,running,,0
+32,Velvet Pearl,crude_tanker,5,1,13.4,0.1995,-12.97,72.146,running,,0
+33,Iron Falcon,crude_tanker,5,1,12.4,0.7343,6.4904,-14.4632,running,,0
+34,Solar Meridian,container_ship,5,1,18.6,0.5275,-23.4625,11.7014,running,,0
+35,Amber Beacon,bulk_carrier,5,-1,13.6,0.2111,-14.6388,70.3862,running,,0
+36,Noble Falcon,crude_tanker,6,-1,12.9,0.2007,-11.3065,-35.2489,running,,0
+37,Solar Falcon,bulk_carrier,6,-1,11.4,0.2028,-11.1141,-35.2019,running,,0
+38,Amber Spirit,bulk_carrier,6,1,11.7,0.7729,36.7875,-12.9375,running,,0
+39,Noble Pioneer,bulk_carrier,6,-1,12.6,0.9174,47.9474,-5.6147,running,,0
+40,Copper Tide,crude_tanker,6,1,13.1,0.8069,39.1196,-10.4152,running,,0
+41,Jade Star,product_tanker,7,1,14.7,0.1409,24.1269,-82.9228,running,,0
+42,Copper Pearl,crude_tanker,7,1,12.3,0.5578,41.4579,-47.7325,running,,0
+43,Swift Tide,crude_tanker,7,1,14.1,0.2826,31.5934,-73.7077,running,,0
+44,Scarlet Tide,crude_tanker,7,1,13.5,0.7384,46.5249,-27.9665,running,,0
+45,Pacific Wave,crude_tanker,7,-1,12.5,0.2946,32.2164,-72.7825,running,,0
+46,Harbor Star,bulk_carrier,8,-1,13.9,0.8372,22.5772,117.7644,running,,0
+47,Coral Crest,bulk_carrier,8,-1,11.4,0.0927,-15.768,114.5432,stalled,Heavy traffic,0
+48,Granite Venture,bulk_carrier,8,-1,13.3,0.671,13.4805,114.0244,running,,0
+49,Velvet Voyager,bulk_carrier,8,-1,11.9,0.5987,9.6517,111.6383,stalled,Heavy traffic,0
+50,Solar Star,bulk_carrier,8,-1,11.9,0.2384,-6.8885,115.2413,running,,0

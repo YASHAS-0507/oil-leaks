@@ -19,6 +19,7 @@
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="explore" aria-selected="true">Explore</button>
+      <button role="tab" data-tab="globe" aria-selected="false">Ship Tracker</button>
       <button role="tab" data-tab="sql" aria-selected="false">SQL Lab</button>
       <button role="tab" data-tab="schema" aria-selected="false">Schema</button>
       <button role="tab" data-tab="about" aria-selected="false">About</button>
@@ -61,6 +62,44 @@
           <span class="muted small">Circle size on the map reflects volume (log scale). Dashed circles have no volume estimate.</span></div>
         <div class="scroll"><table id="incidents"></table></div>
       </div>
+    </section>
+
+    <!-- SHIP TRACKER (3D globe) -->
+    <section id="tab-globe" class="tab" hidden>
+      <div class="globegrid">
+        <div class="globewrap">
+          <div id="globe" aria-label="3D globe with ships"></div>
+          <ul class="legend gl-legend">
+            <li><i style="background:#3ddc84"></i>Running</li>
+            <li><i style="background:#f5c542"></i>Stalled (traffic, orders, weather)</li>
+            <li><i style="background:#ff4d4d"></i>Leaking</li>
+            <li><i style="background:#cfd8e3"></i>Past spills (from the database)</li>
+          </ul>
+        </div>
+        <aside class="gside">
+          <div class="card">
+            <h3>Fleet <span class="muted small">(simulation, fictional ships)</span></h3>
+            <div id="g-counts" class="gcounts"></div>
+            <p id="g-leaked" class="muted small"></p>
+          </div>
+          <div class="card">
+            <h3>Controls</h3>
+            <div class="gctl">
+              <label>Speed <select id="g-speed">
+                <option value="1">1 s = 1 hour</option><option value="3" selected>1 s = 3 hours</option>
+                <option value="8">1 s = 8 hours</option><option value="24">1 s = 1 day</option></select></label>
+              <button id="g-pause" class="ghost">Pause</button>
+            </div>
+            <label class="check"><input id="g-auto" type="checkbox" checked> Random incidents (stalls and leaks)</label>
+            <label class="check"><input id="g-routes" type="checkbox" checked> Show sea lanes</label>
+            <label class="check"><input id="g-past" type="checkbox" checked> Show past spills</label>
+            <label class="check"><input id="g-rotate" type="checkbox"> Auto-rotate</label>
+          </div>
+          <div class="card" id="g-selected"><h3>Selected ship</h3><p class="muted small">Click a ship on the globe.</p></div>
+          <div class="card"><h3>Latest events <span class="muted small">(vessel_event table)</span></h3><ul id="g-events" class="events"></ul></div>
+        </aside>
+      </div>
+      <p class="muted small">Ships follow real sea lanes but are <b>simulated and fictional</b>, there is no live tracking. Every change is a real SQL <code>UPDATE</code> on the <code>vessel</code> table and a trigger writes the <code>vessel_event</code> log. Run <code>UPDATE vessel SET status = 'leaking' WHERE vessel_id = 5;</code> in the SQL Lab and come back to see the ship turn red.</p>
     </section>
 
     <!-- SQL LAB -->
@@ -112,6 +151,9 @@
 
   <script src="vendor/leaflet.js"></script>
   <script src="vendor/sql-wasm.js"></script>
+  <script src="vendor/globe.gl.min.js"></script>
+  <script src="vendor/topojson-client.min.js"></script>
   <script src="app.js"></script>
+  <script src="globe.js"></script>
 </body>
 </html>

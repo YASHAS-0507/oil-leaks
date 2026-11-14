@@ -97,6 +97,7 @@
   function showTab(name) {
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + name; });
+    if (window.OilGlobe) { if (name === 'globe') window.OilGlobe.show(); else window.OilGlobe.hide(); }
     if (name === 'explore') { refreshExplore(); setTimeout(() => map && map.invalidateSize(), 50); }
     if (name === 'schema') renderSchema();
     if (name === 'sql') renderObjects();
@@ -426,8 +427,9 @@
         t.selectionStart = t.selectionEnd = s + 2;
       }
     });
+    window.OilApp = { query, run: (sql, params) => db.run(sql, params), prepare: (sql) => db.prepare(sql), db: () => db, esc, fmt, pretty };
     const start = (location.hash || '#explore').slice(1);
-    showTab(['explore', 'sql', 'schema', 'about'].includes(start) ? start : 'explore');
+    showTab(['explore', 'globe', 'sql', 'schema', 'about'].includes(start) ? start : 'explore');
     window.__oilLeaks = { query, runSql }; // handy for debugging in the console
   }
 

@@ -29,6 +29,10 @@ TABLES = [
     ("incident_company", "incident_companies.csv", {"incident_id": "i", "company_id": "i"}),
     ("incident_impact", "incident_impacts.csv", {"incident_id": "i", "impact_type_id": "i"}),
     ("source_reference", "source_references.csv", {"reference_id": "i", "incident_id": "i"}),
+    ("shipping_route", "shipping_routes.csv", {"route_id": "i"}),
+    ("route_waypoint", "route_waypoints.csv", {"route_id": "i", "seq": "i", "latitude": "f", "longitude": "f"}),
+    ("vessel", "vessels.csv", {"vessel_id": "i", "route_id": "i", "direction": "i", "speed_knots": "f",
+                               "progress": "f", "latitude": "f", "longitude": "f", "leaked_barrels": "i"}),
 ]
 
 
@@ -90,6 +94,19 @@ def validate(data):
             errors.append(f"source_reference {r[0]}: unknown incident_id {r[1]}")
         if not str(r[3]).startswith(("http://", "https://")):
             errors.append(f"source_reference {r[0]}: url must start with http(s)")
+    route_ids = {r[0] for r in data["shipping_route"][1]}
+    for r in data["route_waypoint"][1]:
+        if r[0] not in route_ids:
+            errors.append(f"route_waypoint: unknown route_id {r[0]}")
+    vcols = data["vessel"][0]
+    for row in data["vessel"][1]:
+        v = dict(zip(vcols, row))
+        if v["route_id"] not in route_ids:
+            errors.append(f"vessel {v['name']}: unknown route_id")
+        if v["status"] not in ("running", "stalled", "leaking"):
+            errors.append(f"vessel {v['name']}: bad status {v['status']!r}")
+        if not 0 <= v["progress"] <= 1:
+            errors.append(f"vessel {v['name']}: progress must be between 0 and 1")
     return errors
 
 

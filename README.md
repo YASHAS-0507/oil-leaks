@@ -2,7 +2,7 @@
 
 An open-source relational database of oil spills and leaks around the world: tankers, pipelines, offshore platforms, wells, storage facilities and rail, on land, in freshwater and at sea.
 
-**Live site:** https://yashas-0507.github.io/oil-leaks/ (interactive map, charts and a SQL Lab where you can run any query and even alter the tables, right in the browser)
+**Live site:** https://yashas-0507.github.io/oil-leaks/ (interactive map and charts, a 3D **Ship Tracker** globe, and a SQL Lab where you can run any query and even alter the tables, right in the browser)
 
 Started as a DBMS course project. Code is MIT licensed, data is CC BY 4.0, contributions are welcome.
 
@@ -16,7 +16,11 @@ Started as a DBMS course project. Code is MIT licensed, data is CC BY 4.0, contr
 | `db/sqlite/schema.sql` | SQLite version of the schema, used by the website |
 | `db/queries.sql` | 14 sample queries (joins, GROUP BY/HAVING, subqueries, window functions, CTE) |
 | `scripts/build.py` | Validates the CSVs and builds `web/oil_leaks.db` and `db/mysql/seed.sql` |
-| `web/` | The static website (map, charts, SQL Lab). Runs real SQLite in the browser via sql.js |
+| `web/` | The static website (map, charts, 3D globe, SQL Lab). Runs real SQLite in the browser via sql.js |
+
+## Ship Tracker (3D globe)
+
+The **Ship Tracker** tab shows 50 *fictional* ships sailing along real sea lanes on a 3D globe: **green** = running, **yellow** = stalled (traffic, awaiting orders, weather), **red** = leaking. It is a simulation, not live AIS data. The `vessel` table is the source of truth: the simulation reads it, moves the ships and writes positions and status changes back with SQL `UPDATE`s, and a trigger logs every change to `vessel_event`. Run `UPDATE vessel SET status = 'leaking' WHERE vessel_id = 5;` in the SQL Lab, switch back to the globe, and the ship turns red.
 
 ## Entity-relationship diagram
 
@@ -31,6 +35,9 @@ erDiagram
     impact_type ||--o{ incident_impact : classifies
     incident ||--o{ source_reference : "documented by"
     incident ||--o{ incident_audit : "logged in"
+    shipping_route ||--o{ route_waypoint : "passes through"
+    shipping_route ||--o{ vessel : "sailed by"
+    vessel ||--o{ vessel_event : "logged in"
 
     country { int country_id PK
               char iso_code UK
@@ -70,7 +77,7 @@ erDiagram
                      string action }
 ```
 
-`incident_company` and `incident_impact` are the many-to-many junction tables. The tables are in third normal form: countries, causes, companies and impact types are stored once and referenced by key.
+`incident_company` and `incident_impact` are the many-to-many junction tables. The fleet tables (`shipping_route`, `route_waypoint`, `vessel`, `vessel_event`) power the globe. The tables are in third normal form: countries, causes, companies and impact types are stored once and referenced by key.
 
 ## Run it yourself
 
@@ -117,4 +124,4 @@ The seed dataset covers 42 well-known incidents compiled from public sources. Es
 
 ## License
 
-Code: [MIT](LICENSE). Data in `data/`: [CC BY 4.0](DATA_LICENSE.md). Bundled libraries (sql.js, Leaflet) keep their own licenses in `web/vendor/`.
+Code: [MIT](LICENSE). Data in `data/`: [CC BY 4.0](DATA_LICENSE.md). Bundled libraries (sql.js, Leaflet, globe.gl, topojson-client, world-atlas) keep their own licenses in `web/vendor/`.

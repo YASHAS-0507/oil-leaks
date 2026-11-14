@@ -7,8 +7,8 @@ CREATE DATABASE IF NOT EXISTS oil_leaks CHARACTER SET utf8mb4 COLLATE utf8mb4_un
 USE oil_leaks;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP VIEW  IF EXISTS v_cause_summary, v_incidents_by_decade, v_country_summary, v_incident_details;
-DROP TABLE IF EXISTS incident_audit, source_reference, incident_impact, incident_company,
+DROP VIEW  IF EXISTS v_vessel_details, v_fleet_status, v_cause_summary, v_incidents_by_decade, v_country_summary, v_incident_details;
+DROP TABLE IF EXISTS vessel_event, vessel, route_waypoint, shipping_route, incident_audit, source_reference, incident_impact, incident_company,
                      incident, impact_type, cause, company, country;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -199,6 +199,89 @@ BEGIN
   WHERE c.iso_code = p_iso AND i.volume_barrels IS NOT NULL
   ORDER BY i.volume_barrels DESC
   LIMIT p_limit;
+END$$
+
+DELIMITER ;
+
+-- Fleet simulation (powers the globe) -------------------------------------
+-- All vessels are fictional. Positions are cached from the simulation.
+
+CREATE TABLE shipping_route (
+  route_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name     VARCHAR(120) NOT NULL,
+  PRIMARY KEY (route_id),
+  UNIQUE KEY uq_route_name (name)
+) ENGINE=InnoDB;
+
+CREATE TABLE route_waypoint (
+  route_id  INT UNSIGNED NOT NULL,
+  seq       INT UNSIGNED NOT NULL,
+  latitude  DECIMAL(8,5) NOT NULL,
+  longitude DECIMAL(8,5) NOT NULL,
+  PRIMARY KEY (route_id, seq),
+  CONSTRAINT fk_wp_route FOREIGN KEY (route_id) REFERENCES shipping_route (route_id) ON DELETE CASCADE,
+  CONSTRAINT chk_wp_lat CHECK (latitude  BETWEEN -90  AND 90),
+  CONSTRAINT chk_wp_lon CHECK (longitude BETWEEN -180 AND 180)
+) ENGINE=InnoDB;
+
+CREATE TABLE vessel (
+  vessel_id      INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name           VARCHAR(100) NOT NULL,
+  vessel_type    ENUM('crude_tanker','product_tanker','container_ship','bulk_carrier') NOT NULL,
+  route_id       INT UNSIGNED NOT NULL,
+  direction      TINYINT NOT NULL DEFAULT 1,
+  speed_knots    DECIMAL(4,1) NOT NULL,
+  progress       DECIMAL(7,6) NOT NULL DEFAULT 0,
+  latitude       DECIMAL(8,5) NULL,
+  longitude      DECIMAL(8,5) NULL,
+  status         ENUM('running','stalled','leaking') NOT NULL DEFAULT 'running',
+  status_reason  VARCHAR(120) NULL,
+  leaked_barrels INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (vessel_id),
+  UNIQUE KEY uq_vessel_name (name),
+  KEY idx_vessel_route (route_id),
+  KEY idx_vessel_status (status),
+  CONSTRAINT fk_vessel_route FOREIGN KEY (route_id) REFERENCES shipping_route (route_id),
+  CONSTRAINT chk_vessel_dir CHECK (direction IN (-1, 1)),
+  CONSTRAINT chk_vessel_speed CHECK (speed_knots > 0),
+  CONSTRAINT chk_vessel_progress CHECK (progress BETWEEN 0 AND 1)
+) ENGINE=InnoDB;
+
+CREATE TABLE vessel_event (
+  event_id   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  vessel_id  INT UNSIGNED NOT NULL,
+  event_type ENUM('running','stalled','leaking') NOT NULL,
+  latitude   DECIMAL(8,5) NULL,
+  longitude  DECIMAL(8,5) NULL,
+  note       VARCHAR(120) NULL,
+  event_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (event_id),
+  KEY idx_vessel_event_vessel (vessel_id),
+  CONSTRAINT fk_event_vessel FOREIGN KEY (vessel_id) REFERENCES vessel (vessel_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE VIEW v_fleet_status AS
+SELECT status, COUNT(*) AS vessels, COALESCE(SUM(leaked_barrels), 0) AS leaked_barrels
+FROM vessel
+GROUP BY status;
+
+CREATE VIEW v_vessel_details AS
+SELECT v.vessel_id, v.name, v.vessel_type, r.name AS route, v.speed_knots, v.status, v.status_reason,
+       v.latitude, v.longitude, v.leaked_barrels
+FROM vessel v
+JOIN shipping_route r ON r.route_id = v.route_id;
+
+DELIMITER $$
+
+-- Every status change is logged automatically
+CREATE TRIGGER trg_vessel_status_log
+AFTER UPDATE ON vessel
+FOR EACH ROW
+BEGIN
+  IF NEW.status <> OLD.status THEN
+    INSERT INTO vessel_event (vessel_id, event_type, latitude, longitude, note)
+    VALUES (NEW.vessel_id, NEW.status, NEW.latitude, NEW.longitude, NEW.status_reason);
+  END IF;
 END$$
 
 DELIMITER ;
