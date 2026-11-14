@@ -264,7 +264,7 @@
   function updateShips(now) {
     const cam = globe.camera();
     const alt = Math.max(0.05, cam.position.length() / GLOBE_R - 1);
-    const zoom = Math.min(1.5, Math.max(0.12, alt / 1.75));
+    const zoom = Math.min(1.5, Math.max(0.2, alt / 1.75));
     const pulse = 1 + 0.18 * Math.sin(now / 260);
     ships.forEach((s) => {
       if (!s.obj) { s.obj = makeShip(s.type, s.id); shipGroup.add(s.obj); }
@@ -291,9 +291,12 @@
         o.quaternion.setFromRotationMatrix(m);
       }
       const isSel = s.id === selectedId;
-      parts.inner.scale.setScalar(1.35 * zoom * (isSel ? 1.3 : 1));
-      parts.halo.scale.setScalar(s.status === 'leaking' ? pulse : 1);
+      const k = 2.3 * zoom * (isSel ? 1.25 : 1);
+      const ring = 0.78 * zoom / k;           // keep the status ring at its earlier size
+      parts.inner.scale.setScalar(k);
+      parts.halo.scale.setScalar((s.status === 'leaking' ? pulse : 1) * ring * (1 / zoom) * zoom);
       parts.halo.material.opacity = s.status === 'running' ? 0.4 : 0.65;
+      parts.sel.scale.setScalar(ring * (isSel ? 0.8 : 1));
       parts.sel.visible = isSel;
     });
   }
@@ -416,7 +419,7 @@
     selectedId = id;
     renderSelected(true);
     const s = ships.get(id);
-    if (s && focus) globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 0.9 }, 900);
+    if (s && focus) globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 0.45 }, 900);
   }
 
   /* ---------- main loop ---------- */
@@ -458,7 +461,7 @@
     A = window.OilApp;
     T = window.THREE;
     const el = $('globe');
-    const topo = await (await fetch('vendor/countries-50m.json?v=3')).json();
+    const topo = await (await fetch('vendor/countries-50m.json?v=4')).json();
     land = topojson.feature(topo, topo.objects.countries).features;
 
     globe = Globe()(el)
