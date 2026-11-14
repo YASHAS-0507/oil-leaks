@@ -1,7 +1,7 @@
 /* Ship Tracker: 3D globe with simulated (fictional) ships on real sea lanes.
    The `vessel` table in the database is the source of truth. The simulation reads it,
    moves the ships and writes positions and status changes back with real SQL.
-   Ships are real 3D models (tanker, container ship, bulk carrier) that point along their heading. */
+   Rendered with CesiumJS. Ships are 3D glTF models (tanker, container ship, bulk carrier) that point along their heading. */
 (function () {
   'use strict';
 
@@ -10,14 +10,13 @@
   const STALL_REASONS = ['Port congestion', 'Awaiting orders', 'Heavy traffic', 'Bad weather', 'Canal queue'];
   const LEAK_REASONS = ['Hull crack', 'Cargo valve failure', 'Corroded fuel line'];
   const R_NM = 3440.065;
-  const GLOBE_R = 100;
   const P_STALL = 0.003;                      // per ship per simulated hour
   const P_LEAK = { crude_tanker: 0.0012, product_tanker: 0.0012, container_ship: 0.0004, bulk_carrier: 0.0004 };
 
-  let A, T, globe, shipGroup, land = [], pastSpills = [], routes = new Map(), ships = new Map(), trail = [];
+  let A, C, viewer, satLayer, pastEnts = [], routeEnts = [], pastSpills = [], routes = new Map(), ships = new Map(), trail = [];
   let clock = 0, hoursPerSec = 3, paused = false, auto = true, visible = false, raf = 0;
-  let lastFrame = 0, lastPush = 0, lastSync = 0, lastPanel = 0, selectedId = null, initDone = false, initializing = false;
-  let showRoutes = true, showPast = true, lastSql = '';
+  let lastFrame = 0, lastSync = 0, lastPanel = 0, selectedId = null, initDone = false, initializing = false;
+  let showRoutes = true, showPast = true, rotate = false, lastSql = '';
   const $ = (id) => document.getElementById(id);
 
   /* ---------- geometry ---------- */
@@ -90,7 +89,7 @@
       seen.add(row.vessel_id);
       let s = ships.get(row.vessel_id);
       if (!s) {
-        s = { id: row.vessel_id, w: {}, trailAcc: 0, rate: 150 + Math.random() * 350, obj: null };
+        s = { id: row.vessel_id, w: {}, trailAcc: 0, rate: 150 + Math.random() * 350, ent: null, ring: null, selRing: null };
         ships.set(row.vessel_id, s);
         s.status = row.status; s.reason = row.status_reason;
         s.until = row.status === 'running' ? Infinity : (first ? clock + 24 + Math.random() * 72 : Infinity);
@@ -109,7 +108,7 @@
     [...ships.keys()].forEach((id) => {
       if (!seen.has(id)) {
         const s = ships.get(id);
-        if (s.obj) shipGroup.remove(s.obj);
+        removeShipEnts(s);
         ships.delete(id);
         if (selectedId === id) selectedId = null;
       }
@@ -160,8 +159,7 @@
         s.trailAcc += simH;
         if (s.trailAcc >= 1.5) {
           s.trailAcc = 0;
-          trail.push({ kind: 'trail', lat: s.lat, lng: s.lng });
-          if (trail.length > 260) trail.shift();
+          addTrail(s.lat, s.lng);
         }
       }
       if (!auto) return;
@@ -175,203 +173,104 @@
     });
   }
 
-  /* ---------- 3D ship models ---------- */
+  /* ---------- CesiumJS rendering ---------- */
 
-  const PALETTE = [0xc2573a, 0x3b6ea5, 0xd8a23a, 0x5b8a5b, 0x8a4f9e, 0xcfcfcf];
+  const TYPE_FILE = { crude_tanker: 'tanker', product_tanker: 'tanker', container_ship: 'container', bulk_carrier: 'bulk' };
+  const modelUri = (type, status) => 'models/' + (TYPE_FILE[type] || 'tanker') + '_' + status + '.glb';
+  const cssColor = (status) => C.Color.fromCssColorString(COLORS[status]);
 
-  function hullGeometry(widthScale, depth) {
-    const w = widthScale;
-    const sh = new T.Shape();
-    sh.moveTo(-0.55 * w, -2.0); sh.lineTo(0.55 * w, -2.0); sh.lineTo(0.62 * w, 0.9);
-    sh.quadraticCurveTo(0.4 * w, 1.9, 0, 2.5);
-    sh.quadraticCurveTo(-0.4 * w, 1.9, -0.62 * w, 0.9);
-    sh.lineTo(-0.55 * w, -2.0);
-    const g = new T.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
-    g.rotateX(Math.PI / 2);          // shape length -> +Z (bow), extrusion -> downwards
-    g.translate(0, depth, 0);
-    return g;
+  function removeShipEnts(s) {
+    [s.ent, s.ring, s.selRing].forEach((e) => { if (e) viewer.entities.remove(e); });
+    s.ent = s.ring = s.selRing = null;
   }
 
-  function box(w, h, d, x, y, z, color) {
-    const m = new T.Mesh(new T.BoxGeometry(w, h, d), new T.MeshLambertMaterial({ color }));
-    m.position.set(x, y, z);
-    return m;
+  function addTrail(lat, lng) {
+    const e = viewer.entities.add({ position: C.Cartesian3.fromDegrees(lng, lat), point: { pixelSize: 5, color: C.Color.fromCssColorString('#ff4d4d').withAlpha(0.45), disableDepthTestDistance: 0 } });
+    trail.push(e);
+    if (trail.length > 260) viewer.entities.remove(trail.shift());
   }
 
-  function makeShip(type, id) {
-    const outer = new T.Group();
-    const inner = new T.Group();
-    outer.add(inner);
-    outer.userData.shipId = id;
-
-    const hullMat = new T.MeshLambertMaterial({ color: HEX.running });
-    inner.add(new T.Mesh(hullGeometry(1, 0.55), hullMat));
-    const deck = new T.Mesh(hullGeometry(0.88, 0.05), new T.MeshLambertMaterial({ color: 0x2b2f33 }));
-    deck.position.y = 0.55;
-    inner.add(deck);
-
-    const deckY = 0.6;
-    inner.add(box(0.95, 0.8, 0.7, 0, deckY + 0.4, -1.45, 0xf2f2f2));            // accommodation block
-    inner.add(box(0.7, 0.12, 0.5, 0, deckY + 0.86, -1.45, 0x9aa4ad));           // bridge deck
-    const funnel = new T.Mesh(new T.CylinderGeometry(0.13, 0.17, 0.4, 10), hullMat);
-    funnel.position.set(0, deckY + 1.05, -1.7);
-    inner.add(funnel);
-
-    if (type === 'container_ship') {
-      for (let i = 0; i < 4; i++) {
-        const z = -0.55 + i * 0.68;
-        inner.add(box(0.92, 0.5, 0.6, 0, deckY + 0.25, z, PALETTE[(id + i) % PALETTE.length]));
-        if ((id + i) % 2 === 0) inner.add(box(0.85, 0.35, 0.55, 0, deckY + 0.67, z, PALETTE[(id + i + 2) % PALETTE.length]));
-      }
-    } else if (type === 'bulk_carrier') {
-      for (let i = 0; i < 4; i++) inner.add(box(0.8, 0.2, 0.5, 0, deckY + 0.1, -0.6 + i * 0.68, 0x8a8f96));
-      [-0.1, 0.8].forEach((z) => inner.add(box(0.05, 0.55, 0.05, 0.5, deckY + 0.3, z, 0xd9d9d9)));
-    } else { // tankers
-      inner.add(box(0.16, 0.09, 3.0, 0, deckY + 0.06, 0.3, 0xb9c0c7));            // pipe run along the deck
-      for (let i = 0; i < 6; i++) inner.add(box(0.7, 0.05, 0.05, 0, deckY + 0.06, -0.75 + i * 0.5, 0xb9c0c7));
-      for (let i = 0; i < 3; i++) {
-        const c = new T.Mesh(new T.CylinderGeometry(0.12, 0.12, 0.22, 8), new T.MeshLambertMaterial({ color: 0xdadfe3 }));
-        c.position.set(0, deckY + 0.16, -0.5 + i * 1.0);
-        inner.add(c);
-      }
-    }
-
-    const halo = new T.Mesh(new T.RingGeometry(2.0, 2.7, 40), new T.MeshBasicMaterial({
-      color: HEX.running, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false }));
-    halo.rotation.x = -Math.PI / 2;
-    halo.position.y = 0.08;
-    inner.add(halo);
-
-    const sel = new T.Mesh(new T.RingGeometry(3.1, 3.5, 40), new T.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }));
-    sel.rotation.x = -Math.PI / 2;
-    sel.position.y = 0.1;
-    sel.visible = false;
-    inner.add(sel);
-
-    const hit = new T.Mesh(new T.SphereGeometry(3.4, 8, 6), new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    hit.position.y = 0.8;
-    inner.add(hit);
-
-    outer.userData.parts = { inner, hullMat, halo, sel, status: null };
-    outer.userData.up = new T.Vector3();
-    outer.userData.fwd = new T.Vector3();
-    outer.userData.right = new T.Vector3();
-    outer.userData.m = new T.Matrix4();
-    return outer;
+  function bearing(a, b) {
+    const f1 = rad(a[0]), f2 = rad(b[0]), dl = rad(b[1] - a[1]);
+    return Math.atan2(Math.sin(dl) * Math.cos(f2), Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl));
   }
 
-  function updateShips(now) {
-    const cam = globe.camera();
-    const alt = Math.max(0.05, cam.position.length() / GLOBE_R - 1);
-    const zoom = Math.min(1.5, Math.max(0.2, alt / 1.75));
-    const pulse = 1 + 0.18 * Math.sin(now / 260);
-    ships.forEach((s) => {
-      if (!s.obj) { s.obj = makeShip(s.type, s.id); shipGroup.add(s.obj); }
-      const o = s.obj, parts = o.userData.parts;
-      if (parts.status !== s.status) {
-        parts.status = s.status;
-        parts.hullMat.color.setHex(HEX[s.status]);
-        parts.hullMat.emissive.setHex(HEX[s.status]).multiplyScalar(0.28);
-        parts.halo.material.color.setHex(HEX[s.status]);
-      }
-      const route = routes.get(s.route_id);
-      const c = globe.getCoords(s.lat, s.lng, 0.003);
-      o.position.set(c.x, c.y, c.z);
-      const ahead = posAt(route, s.progress + s.dir * 0.003);
-      const c2 = globe.getCoords(ahead[0], ahead[1], 0.003);
-      const { up, fwd, right, m } = o.userData;
-      up.set(c.x, c.y, c.z).normalize();
-      fwd.set(c2.x - c.x, c2.y - c.y, c2.z - c.z);
-      fwd.addScaledVector(up, -fwd.dot(up));
-      if (fwd.lengthSq() > 1e-9) {
-        fwd.normalize();
-        right.crossVectors(up, fwd).normalize();
-        m.makeBasis(right, up, fwd);
-        o.quaternion.setFromRotationMatrix(m);
-      }
-      const isSel = s.id === selectedId;
-      const k = 2.3 * zoom * (isSel ? 1.25 : 1);
-      const ring = 0.78 * zoom / k;           // keep the status ring at its earlier size
-      parts.inner.scale.setScalar(k);
-      parts.halo.scale.setScalar((s.status === 'leaking' ? pulse : 1) * ring * (1 / zoom) * zoom);
-      parts.halo.material.opacity = s.status === 'running' ? 0.4 : 0.65;
-      parts.sel.scale.setScalar(ring * (isSel ? 0.8 : 1));
-      parts.sel.visible = isSel;
+  function makeShipEnts(s) {
+    s.ent = viewer.entities.add({
+      position: C.Cartesian3.fromDegrees(s.lng, s.lat, 0),
+      model: { uri: modelUri(s.type, s.status), minimumPixelSize: 46, maximumScale: 60000, scale: 1, runAnimations: false,
+        shadows: C.ShadowMode.DISABLED, silhouetteColor: cssColor(s.status), silhouetteSize: 2.5 }
+    });
+    s.ent.shipId = s.id;
+    s.modelStatus = s.status;
+    const color = new C.CallbackProperty(() => cssColor(s.status).withAlpha(s.status === 'running' ? 0.55 : 0.9), false);
+    const size = new C.CallbackProperty(() => 34 + (s.status === 'leaking' ? 6 * Math.sin(performance.now() / 260) : 0), false);
+    s.ring = viewer.entities.add({
+      position: new C.CallbackProperty(() => s.cart, false),
+      point: { pixelSize: size, color: C.Color.TRANSPARENT, outlineColor: color, outlineWidth: 3, disableDepthTestDistance: 0 }
+    });
+    s.ring.shipId = s.id;
+    s.selRing = viewer.entities.add({
+      position: new C.CallbackProperty(() => s.cart, false),
+      show: false,
+      point: { pixelSize: 48, color: C.Color.TRANSPARENT, outlineColor: C.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: 0 }
     });
   }
 
-  /* ---------- picking (click and hover on 3D ships) ---------- */
-
-  function raySphere(o, d, r) {
-    const b = o.x * d.x + o.y * d.y + o.z * d.z;
-    const c = o.x * o.x + o.y * o.y + o.z * o.z - r * r;
-    const disc = b * b - c;
-    if (disc < 0) return null;
-    const t = -b - Math.sqrt(disc);
-    return t > 0 ? t : null;
+  function updateShips() {
+    ships.forEach((s) => {
+      if (!s.ent) makeShipEnts(s);
+      if (s.modelStatus !== s.status) { s.ent.model.uri = modelUri(s.type, s.status); s.ent.model.silhouetteColor = cssColor(s.status); s.modelStatus = s.status; }
+      const route = routes.get(s.route_id);
+      s.cart = C.Cartesian3.fromDegrees(s.lng, s.lat, 0);
+      const ahead = posAt(route, Math.min(1, Math.max(0, s.progress + s.dir * 0.004)));
+      if (Math.abs(ahead[0] - s.lat) + Math.abs(ahead[1] - s.lng) > 1e-6) s.heading = bearing([s.lat, s.lng], ahead) - Math.PI / 2;
+      s.ent.position = s.cart;
+      s.ent.orientation = C.Transforms.headingPitchRollQuaternion(s.cart, new C.HeadingPitchRoll(s.heading || 0, 0, 0));
+      s.selRing.show = s.id === selectedId;
+    });
   }
 
-  function pickShip(ev) {
-    const dom = globe.renderer().domElement;
-    const rect = dom.getBoundingClientRect();
-    pickShip.ndc = pickShip.ndc || new T.Vector2();
-    pickShip.ray = pickShip.ray || new T.Raycaster();
-    pickShip.ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
-    pickShip.ray.setFromCamera(pickShip.ndc, globe.camera());
-    const hits = pickShip.ray.intersectObjects(shipGroup.children, true);
-    const tGlobe = raySphere(pickShip.ray.ray.origin, pickShip.ray.ray.direction, GLOBE_R);
-    for (const h of hits) {
-      if (tGlobe !== null && h.distance > tGlobe + 1.5) continue; // ship is on the far side of the globe
-      let o = h.object;
-      while (o && !o.userData.shipId) o = o.parent;
-      if (o) return o.userData.shipId;
-    }
-    return null;
+  /* ---------- picking (click and hover on ships and spills) ---------- */
+
+  function pickEntity(pos) {
+    const p = viewer.scene.pick(pos);
+    return p && p.id && p.id.id !== undefined ? p.id : null;
   }
 
   function bindPicking() {
-    const dom = globe.renderer().domElement;
-    let down = null, lastMove = 0;
     const tip = $('g-tip');
-    dom.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-    dom.addEventListener('pointerup', (e) => {
-      if (!down) return;
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-      const quick = performance.now() - down.t < 600;
-      down = null;
-      if (moved < 6 && quick) { const id = pickShip(e); if (id) select(id, true); }
-    });
-    dom.addEventListener('pointermove', (e) => {
+    const handler = new C.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((m) => {
+      const e = pickEntity(m.position);
+      if (e && e.shipId) select(e.shipId, true);
+    }, C.ScreenSpaceEventType.LEFT_CLICK);
+    let last = 0;
+    handler.setInputAction((m) => {
       const now = performance.now();
-      if (now - lastMove < 50 || e.buttons) return;
-      lastMove = now;
-      const id = pickShip(e);
-      dom.style.cursor = id ? 'pointer' : 'grab';
-      const s = id && ships.get(id);
-      if (s) {
-        tip.innerHTML = '<b>' + A.esc(s.name) + '</b><br>' + A.esc(A.pretty(s.type)) + '<br><span style="color:' + COLORS[s.status] + '">' + A.esc(s.status) + '</span>' + (s.reason ? ' · ' + A.esc(s.reason) : '');
+      if (now - last < 60) return;
+      last = now;
+      const e = pickEntity(m.endPosition);
+      viewer.scene.canvas.style.cursor = e && (e.shipId || e.spill) ? 'pointer' : 'default';
+      let html = '';
+      if (e && e.shipId && ships.get(e.shipId)) {
+        const s = ships.get(e.shipId);
+        html = '<b>' + A.esc(s.name) + '</b><br>' + A.esc(A.pretty(s.type)) + '<br><span style="color:' + COLORS[s.status] + '">' + A.esc(s.status) + '</span>' + (s.reason ? ' · ' + A.esc(s.reason) : '');
+      } else if (e && e.spill) {
+        const d = e.spill;
+        html = '<b>' + A.esc(d.name) + '</b><br>' + A.esc(d.incident_date) + '<br>' + (d.volume_barrels != null ? A.fmt(d.volume_barrels) + ' barrels' : 'volume unknown');
+      }
+      if (html) {
+        tip.innerHTML = html;
         const rect = $('globe').getBoundingClientRect();
-        tip.style.left = (e.clientX - rect.left + 14) + 'px';
-        tip.style.top = (e.clientY - rect.top + 14) + 'px';
+        tip.style.left = (m.endPosition.x + 14) + 'px';
+        tip.style.top = (m.endPosition.y + 14) + 'px';
         tip.hidden = false;
       } else tip.hidden = true;
-    });
-    dom.addEventListener('pointerleave', () => { tip.hidden = true; });
+    }, C.ScreenSpaceEventType.MOUSE_MOVE);
   }
 
   /* ---------- panel rendering ---------- */
-
-  const tipHtml = (html) => '<div class="gtip">' + html + '</div>';
-
-  function pointsData() {
-    const pts = [];
-    if (showPast) pastSpills.forEach((p) => pts.push({ kind: 'past', lat: p.latitude, lng: p.longitude, data: p }));
-    pts.push(...trail);
-    return pts;
-  }
-
-  function pushGlobe() { globe.pointsData(pointsData()); }
 
   function renderCounts() {
     const c = { running: 0, stalled: 0, leaking: 0 };
@@ -419,7 +318,7 @@
     selectedId = id;
     renderSelected(true);
     const s = ships.get(id);
-    if (s && focus) globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 0.45 }, 900);
+    if (s && focus) viewer.camera.flyTo({ destination: C.Cartesian3.fromDegrees(s.lng, s.lat, 400000), orientation: { heading: 0, pitch: -C.Math.PI_OVER_TWO, roll: 0 }, duration: 1.4 });
   }
 
   /* ---------- main loop ---------- */
@@ -436,8 +335,8 @@
         try { syncFromDb(false); writeToDb(); } catch (e) { noFleet(); return; }
       }
     }
-    updateShips(now);
-    if (now - lastPush > 250) { lastPush = now; pushGlobe(); }
+    updateShips();
+    if (rotate) viewer.camera.rotate(C.Cartesian3.UNIT_Z, -0.0006);
     if (now - lastPanel > 600) {
       lastPanel = now;
       renderCounts(); renderEvents();
@@ -452,67 +351,74 @@
     $('g-leaked').textContent = 'The fleet tables are missing or were changed. Use "Reset database" in the SQL Lab to restore them.';
   }
 
-  function resize() {
-    const el = $('globe');
-    if (globe && el.clientWidth) globe.width(el.clientWidth).height(el.clientHeight);
-  }
+  function resize() { if (viewer) viewer.resize(); }
 
   async function init() {
     A = window.OilApp;
-    T = window.THREE;
+    C = window.Cesium;
     const el = $('globe');
-    const topo = await (await fetch('vendor/countries-50m.json?v=4')).json();
-    land = topojson.feature(topo, topo.objects.countries).features;
-
-    globe = Globe()(el)
-      .backgroundColor('rgba(0,0,0,0)')
-      .showAtmosphere(true).atmosphereColor('#4da3d4').atmosphereAltitude(0.16)
-      .polygonsData(land).polygonCapColor(() => '#27352a').polygonSideColor(() => 'rgba(0,0,0,0)')
-      .polygonStrokeColor(() => '#4f6350').polygonAltitude(0.004).polygonsTransitionDuration(0)
-      .pathPoints('dense').pathPointLat((p) => p[0]).pathPointLng((p) => p[1])
-      .pathColor(() => 'rgba(150,200,255,0.3)').pathStroke(0.3).pathDashLength(0.012).pathDashGap(0.01).pathTransitionDuration(0)
-      .pointsMerge(false).pointsTransitionDuration(0)
-      .pointLat('lat').pointLng('lng')
-      .pointAltitude(0.006)
-      .pointRadius((p) => (p.kind === 'trail' ? 0.22 : 0.3))
-      .pointColor((p) => (p.kind === 'trail' ? 'rgba(255,77,77,0.4)' : 'rgba(207,216,227,0.85)'))
-      .pointLabel((p) => {
-        if (p.kind === 'past') {
-          const d = p.data;
-          return tipHtml('<b>' + A.esc(d.name) + '</b><br>' + A.esc(d.incident_date) + '<br>' + (d.volume_barrels != null ? A.fmt(d.volume_barrels) + ' barrels' : 'volume unknown'));
-        }
-        return '';
-      });
-
-    const mat = globe.globeMaterial();
-    mat.color.set('#0c2036');
-    if (mat.emissive) mat.emissive.set('#06121e');
-    if ('shininess' in mat) mat.shininess = 8;
-    globe.pointOfView({ lat: 22, lng: 40, altitude: 1.75 });
-    globe.controls().autoRotateSpeed = 0.6;
-    globe.controls().minDistance = 112;
-
-    shipGroup = new T.Group();
-    globe.scene().add(shipGroup);
-
+    const base = C.ImageryLayer.fromProviderAsync(C.TileMapServiceImageryProvider.fromUrl(C.buildModuleUrl('Assets/Textures/NaturalEarthII')));
+    viewer = new C.Viewer(el, {
+      baseLayer: base, baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+      navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+      infoBox: false, selectionIndicator: false, terrain: undefined, shouldAnimate: true
+    });
+    const scene = viewer.scene;
+    scene.globe.baseColor = C.Color.fromCssColorString('#0b2238');
+    scene.globe.showGroundAtmosphere = true;
+    scene.globe.enableLighting = false;
+    scene.backgroundColor = C.Color.fromCssColorString('#05080d');
+    scene.skyAtmosphere.show = true;
+    scene.highDynamicRange = false;
+    scene.screenSpaceCameraController.minimumZoomDistance = 20000;
+    viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(45, 18, 15500000) });
+    // light the ships from the camera side so hull colours stay readable
+    scene.light = new C.DirectionalLight({ direction: viewer.camera.directionWC.clone(), intensity: 2.2 });
+    scene.preRender.addEventListener(() => { scene.light.direction = C.Cartesian3.clone(viewer.camera.directionWC, scene.light.direction); });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(el);
     window.addEventListener('resize', resize);
     bindControls();
     bindPicking();
+    setSatellite(true);
     initDone = true;
   }
 
   function applyPaths() {
-    globe.pathsData(showRoutes ? [...routes.values()] : []);
+    routeEnts.forEach((e) => viewer.entities.remove(e));
+    routeEnts = [...routes.values()].map((r) => viewer.entities.add({
+      show: showRoutes,
+      polyline: { positions: C.Cartesian3.fromDegreesArray(r.dense.flatMap((p) => [p[1], p[0]])), width: 1.6, arcType: C.ArcType.GEODESIC,
+        material: new C.PolylineDashMaterialProperty({ color: C.Color.fromCssColorString('#96c8ff').withAlpha(0.55), dashLength: 14 }) }
+    }));
+  }
+
+  function applyPast() {
+    pastEnts.forEach((e) => viewer.entities.remove(e));
+    pastEnts = pastSpills.map((p) => {
+      const e = viewer.entities.add({ show: showPast, position: C.Cartesian3.fromDegrees(p.longitude, p.latitude),
+        point: { pixelSize: 8, color: C.Color.fromCssColorString('#cfd8e3'), outlineColor: C.Color.BLACK.withAlpha(0.6), outlineWidth: 1, disableDepthTestDistance: 0 } });
+      e.spill = p;
+      return e;
+    });
   }
 
   function bindControls() {
     $('g-speed').onchange = (e) => { hoursPerSec = +e.target.value; };
     $('g-pause').onclick = (e) => { paused = !paused; e.target.textContent = paused ? 'Resume' : 'Pause'; };
     $('g-auto').onchange = (e) => { auto = e.target.checked; };
-    $('g-routes').onchange = (e) => { showRoutes = e.target.checked; applyPaths(); };
-    $('g-past').onchange = (e) => { showPast = e.target.checked; pushGlobe(); };
-    $('g-rotate').onchange = (e) => { globe.controls().autoRotate = e.target.checked; };
+    $('g-routes').onchange = (e) => { showRoutes = e.target.checked; routeEnts.forEach((r) => { r.show = showRoutes; }); };
+    $('g-past').onchange = (e) => { showPast = e.target.checked; pastEnts.forEach((p) => { p.show = showPast; }); };
+    $('g-rotate').onchange = (e) => { rotate = e.target.checked; };
+    $('g-sat').onchange = (e) => setSatellite(e.target.checked);
+  }
+
+  function setSatellite(on) {
+    if (on && !satLayer) {
+      satLayer = viewer.imageryLayers.addImageryProvider(new C.UrlTemplateImageryProvider({
+        url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        maximumLevel: 18, credit: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community' }));
+    }
+    if (satLayer) satLayer.show = on;
   }
 
   async function show() {
@@ -526,14 +432,14 @@
     if (!visible) return; // user switched tab while loading
     try {
       loadRoutes(); loadPast();
-      ships.forEach((s) => { if (s.obj) shipGroup.remove(s.obj); });
+      ships.forEach(removeShipEnts);
       ships.clear();
       syncFromDb(true);
     } catch (e) { noFleet(); return; }
-    applyPaths();
-    if (globe.resumeAnimation) globe.resumeAnimation();
+    viewer.useDefaultRenderLoop = true;
+    applyPaths(); applyPast();
     resize();
-    renderCounts(); renderEvents(); renderSelected(true); pushGlobe();
+    renderCounts(); renderEvents(); renderSelected(true);
     lastFrame = performance.now();
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(frame);
@@ -542,12 +448,13 @@
   function hide() {
     visible = false;
     cancelAnimationFrame(raf);
-    if (globe && globe.pauseAnimation) globe.pauseAnimation();
+    if (viewer) viewer.useDefaultRenderLoop = false;
   }
 
   window.OilGlobe = {
     show, hide,
-    _debug: () => ({ ships: [...ships.values()].map((s) => ({ id: s.id, status: s.status, lat: s.lat, lng: s.lng, progress: s.progress, hasModel: !!s.obj })), clock }),
-    _select: (id) => select(id, true)
+    _debug: () => ({ ships: [...ships.values()].map((s) => ({ id: s.id, status: s.status, lat: s.lat, lng: s.lng, progress: s.progress, hasModel: !!s.ent })), clock }),
+    _select: (id) => select(id, true),
+    _viewer: () => viewer
   };
 })();

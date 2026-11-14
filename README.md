@@ -124,4 +124,4 @@ The seed dataset covers 53 well-known incidents. Dates, volumes and coordinates 
 
 ## License
 
-Code: [MIT](LICENSE). Data in `data/`: [CC BY 4.0](DATA_LICENSE.md). Bundled libraries (sql.js, Leaflet, globe.gl, topojson-client, world-atlas) keep their own licenses in `web/vendor/`.
+Code: [MIT](LICENSE). Data in `data/`: [CC BY 4.0](DATA_LICENSE.md). Bundled libraries (sql.js, Leaflet, CesiumJS) keep their own licenses in `web/vendor/`.

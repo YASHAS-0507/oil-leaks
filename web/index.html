@@ -6,6 +6,7 @@
   <title>Oil Leaks Database: an open dataset of oil spills worldwide</title>
   <meta name="description" content="Open-source relational database of oil spills on land and at sea, with an interactive map and a live SQL console that runs in your browser.">
   <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="vendor/cesium/Widgets/widgets.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -96,6 +97,7 @@
             <label class="check"><input id="g-routes" type="checkbox" checked> Show sea lanes</label>
             <label class="check"><input id="g-past" type="checkbox" checked> Show past spills</label>
             <label class="check"><input id="g-rotate" type="checkbox"> Auto-rotate</label>
+            <label class="check"><input id="g-sat" type="checkbox" checked> Satellite imagery (online)</label>
           </div>
           <div class="card" id="g-selected"><h3>Selected ship</h3><p class="muted small">Click a ship on the globe.</p></div>
           <div class="card"><h3>Latest events <span class="muted small">(vessel_event table)</span></h3><ul id="g-events" class="events"></ul></div>
@@ -153,9 +155,9 @@
 
   <script src="vendor/leaflet.js"></script>
   <script src="vendor/sql-wasm.js"></script>
-  <script src="vendor/globe-bundle.min.js?v=4"></script>
-  <script src="vendor/topojson-client.min.js?v=4"></script>
-  <script src="app.js?v=4"></script>
-  <script src="globe.js?v=4"></script>
+  <script>window.CESIUM_BASE_URL = 'vendor/cesium/';</script>
+  <script src="vendor/cesium/Cesium.js"></script>
+  <script src="app.js?v=5"></script>
+  <script src="globe.js?v=5"></script>
 </body>
 </html>
