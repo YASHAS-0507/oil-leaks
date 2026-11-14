@@ -1,0 +1,12 @@
+cause_id,name
+1,Blowout
+2,Collision
+3,Grounding
+4,Equipment failure
+5,Corrosion
+6,Structural failure
+7,Natural hazard
+8,Deliberate / war
+9,Theft / sabotage
+10,Human error
+11,Unknown

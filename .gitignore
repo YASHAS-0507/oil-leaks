@@ -1,0 +1,5 @@
+web/oil_leaks.db
+web/queries.sql
+__pycache__/
+*.pyc
+.DS_Store

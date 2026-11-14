@@ -1,0 +1,31 @@
+company_id,name,company_type,country_id
+1,BP,oil_major,6
+2,Transocean,contractor,22
+3,Halliburton,contractor,1
+4,Exxon Shipping Company,shipping,1
+5,Pemex,state_owned,3
+6,Amoco,oil_major,1
+7,Phillips Petroleum,oil_major,1
+8,Union Oil Company of California,oil_major,1
+9,Enbridge,pipeline_operator,8
+10,ExxonMobil,oil_major,1
+11,Tesoro,refiner,1
+12,Plains All American Pipeline,pipeline_operator,1
+13,TC Energy,pipeline_operator,8
+14,Taylor Energy,independent,1
+15,US Navy,government,1
+16,Montreal Maine & Atlantic Railway,rail,1
+17,Plains Midstream Canada,pipeline_operator,8
+18,Husky Energy,oil_major,8
+19,Petrobras,state_owned,9
+20,Repsol,oil_major,21
+21,OCP Ecuador,pipeline_operator,11
+22,Shell,oil_major,6
+23,Nagashiki Shipping,shipping,23
+24,Mitsui O.S.K. Lines,shipping,23
+25,Samsung Heavy Industries,contractor,15
+26,Oil India,state_owned,17
+27,Nornickel,mining,19
+28,PTTEP Australasia,state_owned,24
+29,Petroecuador,state_owned,11
+30,Mediterranean Shipping Company,shipping,22

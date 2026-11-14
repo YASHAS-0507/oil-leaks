@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oil Leaks Database: an open dataset of oil spills worldwide</title>
+  <meta name="description" content="Open-source relational database of oil spills on land and at sea, with an interactive map and a live SQL console that runs in your browser.">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="drop" aria-hidden="true"></span>
+      <div>
+        <h1>Oil Leaks Database</h1>
+        <p>Open data on oil spills, on land and at sea</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="explore" aria-selected="true">Explore</button>
+      <button role="tab" data-tab="sql" aria-selected="false">SQL Lab</button>
+      <button role="tab" data-tab="schema" aria-selected="false">Schema</button>
+      <button role="tab" data-tab="about" aria-selected="false">About</button>
+    </nav>
+    <a class="gh" href="https://github.com/YASHAS-0507/oil-leaks" target="_blank" rel="noopener">GitHub</a>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+  <div id="loading" class="loading">Loading database…</div>
+
+  <main>
+    <!-- EXPLORE -->
+    <section id="tab-explore" class="tab" hidden>
+      <div class="stats" id="stats"></div>
+
+      <div class="filters">
+        <label>Search <input id="f-q" type="search" placeholder="name, place, country"></label>
+        <label>Environment <select id="f-env"></select></label>
+        <label>Source <select id="f-src"></select></label>
+        <label>Cause <select id="f-cause"></select></label>
+        <label>From <input id="f-from" type="number" placeholder="year" min="1800" max="2100"></label>
+        <label>To <input id="f-to" type="number" placeholder="year" min="1800" max="2100"></label>
+        <label class="check"><input id="f-known" type="checkbox"> Volume known</label>
+        <button id="f-reset" class="ghost">Clear</button>
+      </div>
+
+      <div class="grid">
+        <div class="mapwrap">
+          <div id="map" aria-label="Map of oil spill locations"></div>
+          <ul class="legend" id="legend"></ul>
+        </div>
+        <div class="charts">
+          <div class="card"><h3>Incidents by decade</h3><div id="chart-decade" class="vbars"></div></div>
+          <div class="card"><h3>Incidents by cause</h3><div id="chart-cause" class="hbars"></div></div>
+        </div>
+      </div>
+
+      <div class="card tablecard">
+        <div class="tablehead"><h3>Incidents <span id="count" class="muted"></span></h3>
+          <span class="muted small">Circle size on the map reflects volume (log scale). Dashed circles have no volume estimate.</span></div>
+        <div class="scroll"><table id="incidents"></table></div>
+      </div>
+    </section>
+
+    <!-- SQL LAB -->
+    <section id="tab-sql" class="tab" hidden>
+      <div class="sqlgrid">
+        <aside class="card side">
+          <h3>Tables and views</h3>
+          <div id="objects"></div>
+        </aside>
+        <div class="editor">
+          <div class="toolbar">
+            <select id="examples" aria-label="Example queries"></select>
+            <button id="run" class="primary">Run <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+            <span class="spacer"></span>
+            <button id="export" class="ghost">Download .db</button>
+            <button id="reset" class="danger">Reset database</button>
+          </div>
+          <textarea id="sql" spellcheck="false" aria-label="SQL editor"></textarea>
+          <p class="muted small">This is a real SQLite engine running in your browser. You can <b>SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP</b>, use transactions, triggers and views. Changes stay in your browser (not on the server) until you hit Reset.</p>
+          <div id="results"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCHEMA -->
+    <section id="tab-schema" class="tab" hidden>
+      <p class="muted">Live view of the current schema. It updates when you run <code>CREATE</code>, <code>ALTER</code> or <code>DROP</code> in the SQL Lab. Arrows show foreign keys.</p>
+      <div id="schema-cards" class="cards"></div>
+    </section>
+
+    <!-- ABOUT -->
+    <section id="tab-about" class="tab prose" hidden>
+      <h2>About this project</h2>
+      <p>Oil Leaks Database is an open-source, relational dataset of oil spills and leaks around the world, covering tankers, pipelines, offshore platforms, wells, storage facilities and rail on land, freshwater and the sea. It was started as a DBMS course project and is built so anyone can use, query and improve it.</p>
+      <h3>Data quality</h3>
+      <p>The seed dataset is a curated set of well-known incidents compiled from public sources. Volumes are approximate (see the <code>volume_confidence</code> column), coordinates mark the approximate location, and estimates for many historical spills vary between sources. Please verify against primary sources before citing, and send corrections as pull requests.</p>
+      <h3>Get the data</h3>
+      <ul>
+        <li><a href="oil_leaks.db">oil_leaks.db</a>: SQLite database, the same one running on this page</li>
+        <li><a href="https://github.com/YASHAS-0507/oil-leaks/tree/main/data" target="_blank" rel="noopener">CSV files</a> in the repository</li>
+        <li><a href="https://github.com/YASHAS-0507/oil-leaks/tree/main/db/mysql" target="_blank" rel="noopener">MySQL schema, seed, triggers and stored procedure</a></li>
+      </ul>
+      <h3>Contribute</h3>
+      <p>Add rows to the CSV files in <code>data/</code> and open a pull request. A validation script checks foreign keys, dates and coordinates automatically. Code is MIT licensed and the dataset is CC BY 4.0.</p>
+    </section>
+  </main>
+
+  <footer>Open source on <a href="https://github.com/YASHAS-0507/oil-leaks" target="_blank" rel="noopener">GitHub</a>. Map tiles © OpenStreetMap contributors. Figures are approximate.</footer>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/sql-wasm.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
