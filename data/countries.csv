@@ -23,3 +23,11 @@ country_id,iso_code,name,region
 22,CH,Switzerland,Europe
 23,JP,Japan,Asia
 24,TH,Thailand,Asia
+25,IT,Italy,Europe
+26,OM,Oman,Middle East
+27,MA,Morocco,Africa
+28,IR,Iran,Middle East
+29,MZ,Mozambique,Africa
+30,TR,Turkey,Europe/Asia
+31,PT,Portugal,Europe
+32,ZA,South Africa,Africa

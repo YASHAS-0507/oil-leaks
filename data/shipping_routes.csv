@@ -1,9 +1,17 @@
 route_id,name
-1,Shanghai - Rotterdam via Suez
-2,Persian Gulf - Tokyo (crude)
-3,Yokohama - Los Angeles
-4,Rotterdam - New York
-5,Singapore - Rotterdam round Africa
-6,Santos - Rotterdam
-7,Houston - Rotterdam (crude)
-8,Port Hedland - Shanghai (ore)
+1,Shanghai - Rotterdam
+2,Ras Tanura - Chiba
+3,Ras Tanura - Rotterdam
+4,Fujairah - Singapore
+5,Jebel Ali - Mumbai
+6,Mundra - Rotterdam
+7,Chennai - Singapore
+8,Bonny - Mumbai
+9,Yokohama - Long Beach
+10,Busan - Long Beach
+11,Valdez - Long Beach
+12,Rotterdam - New York
+13,Houston - Rotterdam
+14,Santos - Rotterdam
+15,Port Hedland - Qingdao
+16,Singapore - Rotterdam

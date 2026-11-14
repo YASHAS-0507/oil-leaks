@@ -120,7 +120,7 @@ Volumes are in barrels. `volume_confidence` says how much to trust the number (`
 
 ## Data quality
 
-The seed dataset covers 42 well-known incidents compiled from public sources. Estimates for many historical spills differ between sources, and some figures here are rounded. Treat it as a starting point and verify against primary sources (government agencies, court records, scientific papers) before citing. Corrections are very welcome.
+The seed dataset covers 53 well-known incidents. Dates, volumes and coordinates were checked against ITOPF, NOAA IncidentNews, Cedre and agency reports where available; volumes for older tanker disasters are cargo carried (marked low confidence), not always oil spilled. Estimates for many historical spills differ between sources, and some figures here are rounded. Treat it as a starting point and verify against primary sources (government agencies, court records, scientific papers) before citing. Corrections are very welcome.
 
 ## License
 

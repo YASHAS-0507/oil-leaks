@@ -1,17 +1,20 @@
 /* Ship Tracker: 3D globe with simulated (fictional) ships on real sea lanes.
    The `vessel` table in the database is the source of truth. The simulation reads it,
-   moves the ships and writes positions and status changes back with real SQL. */
+   moves the ships and writes positions and status changes back with real SQL.
+   Ships are real 3D models (tanker, container ship, bulk carrier) that point along their heading. */
 (function () {
   'use strict';
 
   const COLORS = { running: '#3ddc84', stalled: '#f5c542', leaking: '#ff4d4d' };
+  const HEX = { running: 0x3ddc84, stalled: 0xf5c542, leaking: 0xff4d4d };
   const STALL_REASONS = ['Port congestion', 'Awaiting orders', 'Heavy traffic', 'Bad weather', 'Canal queue'];
   const LEAK_REASONS = ['Hull crack', 'Cargo valve failure', 'Corroded fuel line'];
   const R_NM = 3440.065;
+  const GLOBE_R = 100;
   const P_STALL = 0.003;                      // per ship per simulated hour
   const P_LEAK = { crude_tanker: 0.0012, product_tanker: 0.0012, container_ship: 0.0004, bulk_carrier: 0.0004 };
 
-  let A, globe, land = [], pastSpills = [], routes = new Map(), ships = new Map(), trail = [];
+  let A, T, globe, shipGroup, land = [], pastSpills = [], routes = new Map(), ships = new Map(), trail = [];
   let clock = 0, hoursPerSec = 3, paused = false, auto = true, visible = false, raf = 0;
   let lastFrame = 0, lastPush = 0, lastSync = 0, lastPanel = 0, selectedId = null, initDone = false, initializing = false;
   let showRoutes = true, showPast = true, lastSql = '';
@@ -38,7 +41,7 @@
   }
 
   function posAt(route, p) {
-    let d = p * route.total;
+    let d = Math.min(1, Math.max(0, p)) * route.total;
     for (let i = 0; i < route.seg.length; i++) {
       if (d <= route.seg[i] || i === route.seg.length - 1) return gc(route.pts[i], route.pts[i + 1], route.seg[i] ? Math.min(1, d / route.seg[i]) : 0);
       d -= route.seg[i];
@@ -48,11 +51,12 @@
 
   function buildRoute(id, name, pts) {
     const seg = [];
-    let total = 0, dense = [];
+    let total = 0;
+    const dense = [];
     for (let i = 0; i < pts.length - 1; i++) {
       const d = hav(pts[i], pts[i + 1]);
       seg.push(d); total += d;
-      const n = Math.max(1, Math.ceil(d / 180));
+      const n = Math.max(1, Math.ceil(d / 150));
       for (let k = 0; k < n; k++) dense.push(gc(pts[i], pts[i + 1], k / n));
     }
     dense.push(pts[pts.length - 1]);
@@ -86,7 +90,7 @@
       seen.add(row.vessel_id);
       let s = ships.get(row.vessel_id);
       if (!s) {
-        s = { id: row.vessel_id, w: {}, trailAcc: 0, rate: 150 + Math.random() * 350 };
+        s = { id: row.vessel_id, w: {}, trailAcc: 0, rate: 150 + Math.random() * 350, obj: null };
         ships.set(row.vessel_id, s);
         s.status = row.status; s.reason = row.status_reason;
         s.until = row.status === 'running' ? Infinity : (first ? clock + 24 + Math.random() * 72 : Infinity);
@@ -102,7 +106,14 @@
       const p = posAt(routes.get(s.route_id), s.progress);
       s.lat = p[0]; s.lng = p[1];
     });
-    [...ships.keys()].forEach((id) => { if (!seen.has(id)) { ships.delete(id); if (selectedId === id) selectedId = null; } });
+    [...ships.keys()].forEach((id) => {
+      if (!seen.has(id)) {
+        const s = ships.get(id);
+        if (s.obj) shipGroup.remove(s.obj);
+        ships.delete(id);
+        if (selectedId === id) selectedId = null;
+      }
+    });
   }
 
   function writeToDb() {
@@ -164,30 +175,200 @@
     });
   }
 
-  /* ---------- rendering ---------- */
+  /* ---------- 3D ship models ---------- */
 
-  const tip = (html) => '<div class="gtip">' + html + '</div>';
+  const PALETTE = [0xc2573a, 0x3b6ea5, 0xd8a23a, 0x5b8a5b, 0x8a4f9e, 0xcfcfcf];
+
+  function hullGeometry(widthScale, depth) {
+    const w = widthScale;
+    const sh = new T.Shape();
+    sh.moveTo(-0.55 * w, -2.0); sh.lineTo(0.55 * w, -2.0); sh.lineTo(0.62 * w, 0.9);
+    sh.quadraticCurveTo(0.4 * w, 1.9, 0, 2.5);
+    sh.quadraticCurveTo(-0.4 * w, 1.9, -0.62 * w, 0.9);
+    sh.lineTo(-0.55 * w, -2.0);
+    const g = new T.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
+    g.rotateX(Math.PI / 2);          // shape length -> +Z (bow), extrusion -> downwards
+    g.translate(0, depth, 0);
+    return g;
+  }
+
+  function box(w, h, d, x, y, z, color) {
+    const m = new T.Mesh(new T.BoxGeometry(w, h, d), new T.MeshLambertMaterial({ color }));
+    m.position.set(x, y, z);
+    return m;
+  }
+
+  function makeShip(type, id) {
+    const outer = new T.Group();
+    const inner = new T.Group();
+    outer.add(inner);
+    outer.userData.shipId = id;
+
+    const hullMat = new T.MeshLambertMaterial({ color: HEX.running });
+    inner.add(new T.Mesh(hullGeometry(1, 0.55), hullMat));
+    const deck = new T.Mesh(hullGeometry(0.88, 0.05), new T.MeshLambertMaterial({ color: 0x2b2f33 }));
+    deck.position.y = 0.55;
+    inner.add(deck);
+
+    const deckY = 0.6;
+    inner.add(box(0.95, 0.8, 0.7, 0, deckY + 0.4, -1.45, 0xf2f2f2));            // accommodation block
+    inner.add(box(0.7, 0.12, 0.5, 0, deckY + 0.86, -1.45, 0x9aa4ad));           // bridge deck
+    const funnel = new T.Mesh(new T.CylinderGeometry(0.13, 0.17, 0.4, 10), hullMat);
+    funnel.position.set(0, deckY + 1.05, -1.7);
+    inner.add(funnel);
+
+    if (type === 'container_ship') {
+      for (let i = 0; i < 4; i++) {
+        const z = -0.55 + i * 0.68;
+        inner.add(box(0.92, 0.5, 0.6, 0, deckY + 0.25, z, PALETTE[(id + i) % PALETTE.length]));
+        if ((id + i) % 2 === 0) inner.add(box(0.85, 0.35, 0.55, 0, deckY + 0.67, z, PALETTE[(id + i + 2) % PALETTE.length]));
+      }
+    } else if (type === 'bulk_carrier') {
+      for (let i = 0; i < 4; i++) inner.add(box(0.8, 0.2, 0.5, 0, deckY + 0.1, -0.6 + i * 0.68, 0x8a8f96));
+      [-0.1, 0.8].forEach((z) => inner.add(box(0.05, 0.55, 0.05, 0.5, deckY + 0.3, z, 0xd9d9d9)));
+    } else { // tankers
+      inner.add(box(0.16, 0.09, 3.0, 0, deckY + 0.06, 0.3, 0xb9c0c7));            // pipe run along the deck
+      for (let i = 0; i < 6; i++) inner.add(box(0.7, 0.05, 0.05, 0, deckY + 0.06, -0.75 + i * 0.5, 0xb9c0c7));
+      for (let i = 0; i < 3; i++) {
+        const c = new T.Mesh(new T.CylinderGeometry(0.12, 0.12, 0.22, 8), new T.MeshLambertMaterial({ color: 0xdadfe3 }));
+        c.position.set(0, deckY + 0.16, -0.5 + i * 1.0);
+        inner.add(c);
+      }
+    }
+
+    const halo = new T.Mesh(new T.RingGeometry(2.0, 2.7, 40), new T.MeshBasicMaterial({
+      color: HEX.running, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false }));
+    halo.rotation.x = -Math.PI / 2;
+    halo.position.y = 0.08;
+    inner.add(halo);
+
+    const sel = new T.Mesh(new T.RingGeometry(3.1, 3.5, 40), new T.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9, side: T.DoubleSide, depthWrite: false }));
+    sel.rotation.x = -Math.PI / 2;
+    sel.position.y = 0.1;
+    sel.visible = false;
+    inner.add(sel);
+
+    const hit = new T.Mesh(new T.SphereGeometry(3.4, 8, 6), new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 0.8;
+    inner.add(hit);
+
+    outer.userData.parts = { inner, hullMat, halo, sel, status: null };
+    outer.userData.up = new T.Vector3();
+    outer.userData.fwd = new T.Vector3();
+    outer.userData.right = new T.Vector3();
+    outer.userData.m = new T.Matrix4();
+    return outer;
+  }
+
+  function updateShips(now) {
+    const cam = globe.camera();
+    const alt = Math.max(0.05, cam.position.length() / GLOBE_R - 1);
+    const zoom = Math.min(1.5, Math.max(0.12, alt / 1.75));
+    const pulse = 1 + 0.18 * Math.sin(now / 260);
+    ships.forEach((s) => {
+      if (!s.obj) { s.obj = makeShip(s.type, s.id); shipGroup.add(s.obj); }
+      const o = s.obj, parts = o.userData.parts;
+      if (parts.status !== s.status) {
+        parts.status = s.status;
+        parts.hullMat.color.setHex(HEX[s.status]);
+        parts.hullMat.emissive.setHex(HEX[s.status]).multiplyScalar(0.28);
+        parts.halo.material.color.setHex(HEX[s.status]);
+      }
+      const route = routes.get(s.route_id);
+      const c = globe.getCoords(s.lat, s.lng, 0.003);
+      o.position.set(c.x, c.y, c.z);
+      const ahead = posAt(route, s.progress + s.dir * 0.003);
+      const c2 = globe.getCoords(ahead[0], ahead[1], 0.003);
+      const { up, fwd, right, m } = o.userData;
+      up.set(c.x, c.y, c.z).normalize();
+      fwd.set(c2.x - c.x, c2.y - c.y, c2.z - c.z);
+      fwd.addScaledVector(up, -fwd.dot(up));
+      if (fwd.lengthSq() > 1e-9) {
+        fwd.normalize();
+        right.crossVectors(up, fwd).normalize();
+        m.makeBasis(right, up, fwd);
+        o.quaternion.setFromRotationMatrix(m);
+      }
+      const isSel = s.id === selectedId;
+      parts.inner.scale.setScalar(1.35 * zoom * (isSel ? 1.3 : 1));
+      parts.halo.scale.setScalar(s.status === 'leaking' ? pulse : 1);
+      parts.halo.material.opacity = s.status === 'running' ? 0.4 : 0.65;
+      parts.sel.visible = isSel;
+    });
+  }
+
+  /* ---------- picking (click and hover on 3D ships) ---------- */
+
+  function raySphere(o, d, r) {
+    const b = o.x * d.x + o.y * d.y + o.z * d.z;
+    const c = o.x * o.x + o.y * o.y + o.z * o.z - r * r;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    const t = -b - Math.sqrt(disc);
+    return t > 0 ? t : null;
+  }
+
+  function pickShip(ev) {
+    const dom = globe.renderer().domElement;
+    const rect = dom.getBoundingClientRect();
+    pickShip.ndc = pickShip.ndc || new T.Vector2();
+    pickShip.ray = pickShip.ray || new T.Raycaster();
+    pickShip.ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+    pickShip.ray.setFromCamera(pickShip.ndc, globe.camera());
+    const hits = pickShip.ray.intersectObjects(shipGroup.children, true);
+    const tGlobe = raySphere(pickShip.ray.ray.origin, pickShip.ray.ray.direction, GLOBE_R);
+    for (const h of hits) {
+      if (tGlobe !== null && h.distance > tGlobe + 1.5) continue; // ship is on the far side of the globe
+      let o = h.object;
+      while (o && !o.userData.shipId) o = o.parent;
+      if (o) return o.userData.shipId;
+    }
+    return null;
+  }
+
+  function bindPicking() {
+    const dom = globe.renderer().domElement;
+    let down = null, lastMove = 0;
+    const tip = $('g-tip');
+    dom.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+    dom.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      const quick = performance.now() - down.t < 600;
+      down = null;
+      if (moved < 6 && quick) { const id = pickShip(e); if (id) select(id, true); }
+    });
+    dom.addEventListener('pointermove', (e) => {
+      const now = performance.now();
+      if (now - lastMove < 50 || e.buttons) return;
+      lastMove = now;
+      const id = pickShip(e);
+      dom.style.cursor = id ? 'pointer' : 'grab';
+      const s = id && ships.get(id);
+      if (s) {
+        tip.innerHTML = '<b>' + A.esc(s.name) + '</b><br>' + A.esc(A.pretty(s.type)) + '<br><span style="color:' + COLORS[s.status] + '">' + A.esc(s.status) + '</span>' + (s.reason ? ' · ' + A.esc(s.reason) : '');
+        const rect = $('globe').getBoundingClientRect();
+        tip.style.left = (e.clientX - rect.left + 14) + 'px';
+        tip.style.top = (e.clientY - rect.top + 14) + 'px';
+        tip.hidden = false;
+      } else tip.hidden = true;
+    });
+    dom.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  /* ---------- panel rendering ---------- */
+
+  const tipHtml = (html) => '<div class="gtip">' + html + '</div>';
 
   function pointsData() {
     const pts = [];
     if (showPast) pastSpills.forEach((p) => pts.push({ kind: 'past', lat: p.latitude, lng: p.longitude, data: p }));
     pts.push(...trail);
-    ships.forEach((s) => pts.push({ kind: 'ship', lat: s.lat, lng: s.lng, ship: s }));
     return pts;
   }
 
-  function ringsData() {
-    const rings = [];
-    ships.forEach((s) => {
-      if (s.status === 'leaking') rings.push({ lat: s.lat, lng: s.lng, rgb: '255,77,77' });
-      if (s.id === selectedId) rings.push({ lat: s.lat, lng: s.lng, rgb: '255,255,255' });
-    });
-    return rings;
-  }
-
-  function pushGlobe() {
-    globe.pointsData(pointsData()).ringsData(ringsData());
-  }
+  function pushGlobe() { globe.pointsData(pointsData()); }
 
   function renderCounts() {
     const c = { running: 0, stalled: 0, leaking: 0 };
@@ -209,7 +390,7 @@
 
   function renderSelected(full) {
     const s = ships.get(selectedId), box = $('g-selected');
-    if (!s) { box.innerHTML = '<h3>Selected ship</h3><p class="muted small">Click a ship on the globe.</p>'; return; }
+    if (!s) { box.className = 'card'; box.innerHTML = '<h3>Selected ship</h3><p class="muted small">Click a ship on the globe.</p>'; return; }
     const route = routes.get(s.route_id);
     if (full || !$('gs-pos')) {
       box.className = 'card shipinfo';
@@ -224,7 +405,7 @@
       box.querySelectorAll('button').forEach((b) => b.onclick = () => {
         const act = b.dataset.act;
         setStatus(s, act, act === 'stalled' ? 'Awaiting orders (manual)' : act === 'leaking' ? 'Hull crack (manual)' : 'Resumed (manual)', Infinity, true);
-        pushGlobe(); renderCounts(); renderEvents();
+        renderCounts(); renderEvents();
       });
     }
     $('gs-pos').textContent = s.lat.toFixed(2) + ', ' + s.lng.toFixed(2);
@@ -235,8 +416,7 @@
     selectedId = id;
     renderSelected(true);
     const s = ships.get(id);
-    if (s && focus) globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 1.6 }, 900);
-    pushGlobe();
+    if (s && focus) globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 0.9 }, 900);
   }
 
   /* ---------- main loop ---------- */
@@ -253,7 +433,8 @@
         try { syncFromDb(false); writeToDb(); } catch (e) { noFleet(); return; }
       }
     }
-    if (now - lastPush > 90) { lastPush = now; pushGlobe(); }
+    updateShips(now);
+    if (now - lastPush > 250) { lastPush = now; pushGlobe(); }
     if (now - lastPanel > 600) {
       lastPanel = now;
       renderCounts(); renderEvents();
@@ -275,8 +456,9 @@
 
   async function init() {
     A = window.OilApp;
+    T = window.THREE;
     const el = $('globe');
-    const topo = await (await fetch('vendor/countries-110m.json')).json();
+    const topo = await (await fetch('vendor/countries-50m.json')).json();
     land = topojson.feature(topo, topo.objects.countries).features;
 
     globe = Globe()(el)
@@ -285,26 +467,19 @@
       .polygonsData(land).polygonCapColor(() => '#27352a').polygonSideColor(() => 'rgba(0,0,0,0)')
       .polygonStrokeColor(() => '#4f6350').polygonAltitude(0.004).polygonsTransitionDuration(0)
       .pathPoints('dense').pathPointLat((p) => p[0]).pathPointLng((p) => p[1])
-      .pathColor(() => 'rgba(150,200,255,0.28)').pathStroke(0.35).pathDashLength(0.012).pathDashGap(0.01).pathTransitionDuration(0)
+      .pathColor(() => 'rgba(150,200,255,0.3)').pathStroke(0.3).pathDashLength(0.012).pathDashGap(0.01).pathTransitionDuration(0)
       .pointsMerge(false).pointsTransitionDuration(0)
       .pointLat('lat').pointLng('lng')
-      .pointAltitude((p) => (p.kind === 'ship' ? 0.012 : 0.006))
-      .pointRadius((p) => (p.kind === 'ship' ? (p.ship.id === selectedId ? 0.9 : 0.5) : p.kind === 'trail' ? 0.22 : 0.3))
-      .pointColor((p) => (p.kind === 'ship' ? COLORS[p.ship.status] : p.kind === 'trail' ? 'rgba(255,77,77,0.4)' : 'rgba(207,216,227,0.85)'))
+      .pointAltitude(0.006)
+      .pointRadius((p) => (p.kind === 'trail' ? 0.22 : 0.3))
+      .pointColor((p) => (p.kind === 'trail' ? 'rgba(255,77,77,0.4)' : 'rgba(207,216,227,0.85)'))
       .pointLabel((p) => {
-        if (p.kind === 'ship') {
-          const s = p.ship;
-          return tip('<b>' + A.esc(s.name) + '</b><br>' + A.esc(A.pretty(s.type)) + '<br><span style="color:' + COLORS[s.status] + '">' + A.esc(s.status) + '</span>' + (s.reason ? ' · ' + A.esc(s.reason) : ''));
-        }
         if (p.kind === 'past') {
           const d = p.data;
-          return tip('<b>' + A.esc(d.name) + '</b><br>' + A.esc(d.incident_date) + '<br>' + (d.volume_barrels != null ? A.fmt(d.volume_barrels) + ' barrels' : 'volume unknown'));
+          return tipHtml('<b>' + A.esc(d.name) + '</b><br>' + A.esc(d.incident_date) + '<br>' + (d.volume_barrels != null ? A.fmt(d.volume_barrels) + ' barrels' : 'volume unknown'));
         }
         return '';
-      })
-      .onPointClick((p) => { if (p.kind === 'ship') select(p.ship.id, true); })
-      .ringLat('lat').ringLng('lng').ringMaxRadius(3.2).ringPropagationSpeed(1.6).ringRepeatPeriod(1400)
-      .ringColor((r) => (t) => 'rgba(' + r.rgb + ',' + (1 - t) + ')');
+      });
 
     const mat = globe.globeMaterial();
     mat.color.set('#0c2036');
@@ -312,10 +487,15 @@
     if ('shininess' in mat) mat.shininess = 8;
     globe.pointOfView({ lat: 22, lng: 40, altitude: 1.75 });
     globe.controls().autoRotateSpeed = 0.6;
+    globe.controls().minDistance = 112;
+
+    shipGroup = new T.Group();
+    globe.scene().add(shipGroup);
 
     if (window.ResizeObserver) new ResizeObserver(resize).observe(el);
     window.addEventListener('resize', resize);
     bindControls();
+    bindPicking();
     initDone = true;
   }
 
@@ -342,7 +522,9 @@
     }
     if (!visible) return; // user switched tab while loading
     try {
-      loadRoutes(); loadPast(); ships.clear();
+      loadRoutes(); loadPast();
+      ships.forEach((s) => { if (s.obj) shipGroup.remove(s.obj); });
+      ships.clear();
       syncFromDb(true);
     } catch (e) { noFleet(); return; }
     applyPaths();
@@ -360,5 +542,9 @@
     if (globe && globe.pauseAnimation) globe.pauseAnimation();
   }
 
-  window.OilGlobe = { show, hide, _debug: () => ({ ships: [...ships.values()].map((s) => ({ id: s.id, status: s.status, lat: s.lat, lng: s.lng, progress: s.progress })), clock }) };
+  window.OilGlobe = {
+    show, hide,
+    _debug: () => ({ ships: [...ships.values()].map((s) => ({ id: s.id, status: s.status, lat: s.lat, lng: s.lng, progress: s.progress, hasModel: !!s.obj })), clock }),
+    _select: (id) => select(id, true)
+  };
 })();
